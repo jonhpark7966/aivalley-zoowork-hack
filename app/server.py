@@ -1,0 +1,442 @@
+"""Local web demo: a ZooWork agent scouts videos, then selected ones are cut into one ad."""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import json
+import logging
+import uuid
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import httpx
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from . import media, render, zoo
+
+load_dotenv()
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s", datefmt="%H:%M:%S")
+logging.getLogger("httpx").setLevel(logging.WARNING)
+log = logging.getLogger("ugc")
+
+STATIC_DIR = Path(__file__).parent / "static"
+JOBS_DIR = Path("data/jobs")
+TARGET_VIDEOS = 10
+MAX_SELECTED = 6
+OVERVIEW_FRAMES = 14
+DENSE_FRAMES = 12
+# Only the opening of a long video is scanned; hooks and product shots come early.
+SCAN_SECONDS = 60
+MIN_CLIP, MAX_CLIP = 2.5, 6.0
+# A box this large is the whole shot, not something to draw a ring around.
+MAX_BOX_AREA = 0.55
+SPOTTER_TIMEOUT = 90
+
+
+@dataclass
+class Job:
+    id: str
+    query: str
+    dir: Path
+    product: dict[str, Any] | None = None
+    videos: dict[str, dict[str, Any]] = field(default_factory=dict)
+    events: list[dict[str, Any]] = field(default_factory=list)
+    subscribers: list[asyncio.Queue] = field(default_factory=list)
+    renders: int = 0
+    busy: bool = False
+
+    def emit(self, type: str, **data: Any) -> None:
+        event = {"type": type, **data}
+        self.events.append(event)
+        for queue in self.subscribers:
+            queue.put_nowait(len(self.events) - 1)
+
+
+class State:
+    client: zoo.ZooworkClient
+    http: httpx.AsyncClient
+    agents: asyncio.Task  # resolves to {"scout": agent_id, "spotter": agent_id}
+    jobs: dict[str, Job] = {}
+
+
+state = State()
+
+
+async def _provision() -> dict[str, str]:
+    specs = zoo.specs()
+
+    async def ensure(spec: zoo.AgentSpec) -> str:
+        # The platform sometimes answers "temporarily unavailable" right after a deploy or delete.
+        for attempt in range(4):
+            try:
+                return await zoo.ensure_agent(state.client, spec)
+            except zoo.ZooworkError as e:
+                if attempt == 3:
+                    raise
+                log.warning("provisioning %s failed, retrying: %s", spec.key, e)
+                await asyncio.sleep(2 + 2 * attempt)
+        raise AssertionError("unreachable")
+
+    ids = await asyncio.gather(*(ensure(s) for s in specs))
+    log.info("agents ready: %s", dict(zip((s.key for s in specs), ids)))
+    return {s.key: agent_id for s, agent_id in zip(specs, ids)}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    JOBS_DIR.mkdir(parents=True, exist_ok=True)
+    state.client = zoo.make_client()
+    state.http = httpx.AsyncClient(
+        follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (Macintosh) ugc-ad-maker"}
+    )
+    state.agents = asyncio.create_task(_provision())
+    yield
+    await state.http.aclose()
+    await state.client.aclose()
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+# --- Scout: find videos -------------------------------------------------------------------
+
+STEP_TITLES = {
+    "web_search": "Searching the web",
+    "web_fetch": "Reading page",
+    "search_youtube_shorts": "Searching YouTube Shorts",
+    "image": "Looking at an image",
+}
+
+
+def _step_detail(args: dict[str, Any] | None) -> str:
+    args = args or {}
+    for key in ("query", "q", "url"):
+        if isinstance(args.get(key), str):
+            return args[key]
+    return next((v for v in args.values() if isinstance(v, str)), "")
+
+
+def _progress_hook(job: Job):
+    """Turn the agent's tool activity into progress steps for the page."""
+
+    def hook(event) -> None:
+        call = zoo.tool_call(event)
+        if call is None or call.tool_name not in STEP_TITLES:
+            return
+        if call.phase == "start":
+            job.emit("step", id=call.tool_call_id, state="running",
+                     title=STEP_TITLES[call.tool_name], detail=_step_detail(call.args))
+        else:
+            failed = call.phase == "blocked" or bool(call.is_error)
+            job.emit("step", id=call.tool_call_id, state="error" if failed else "done")
+
+    return hook
+
+
+async def run_scout(job: Job) -> None:
+    job.busy = True
+    claimed: set[str] = set()
+
+    async def set_product(args: dict) -> list[dict]:
+        job.product = {
+            "name": str(args.get("name") or job.query)[:60],
+            "brand": args.get("brand") or "",
+            "category": args.get("category") or "",
+            "visual_description": args.get("visual_description") or "",
+            "keywords": args.get("search_keywords") or [],
+            "url": args.get("product_url") or "",
+        }
+        job.emit("product", product=job.product)
+        return zoo.json_result({"ok": True})
+
+    async def search_youtube_shorts(args: dict) -> list[dict]:
+        limit = max(1, min(int(args.get("max_results") or 10), 15))
+        return zoo.json_result(await media.search_youtube(state.http, str(args["query"]), limit))
+
+    async def submit_video(args: dict) -> list[dict]:
+        ref = media.parse_video_url(str(args.get("url") or ""))
+        if ref is None:
+            return zoo.json_result({"accepted": False, "reason": "not a YouTube Shorts or TikTok video URL"})
+        if ref.key in claimed:
+            return zoo.json_result({"accepted": False, "reason": "already submitted"})
+        claimed.add(ref.key)
+        try:
+            meta = await media.lookup(state.http, ref)
+        except media.Rejected as e:
+            return zoo.json_result({"accepted": False, "reason": str(e)})
+        video = {
+            "key": ref.key, "platform": ref.platform, "video_id": ref.video_id, "url": ref.url,
+            "reason": str(args.get("reason") or ""), **meta,
+        }
+        job.videos[ref.key] = video
+        job.emit("video", video=video)
+        return zoo.json_result({"accepted": True, "total": len(job.videos)})
+
+    try:
+        job.emit("status", stage="scout", text="Waking up the scout agent")
+        agents = await state.agents
+        job.emit("status", stage="scout", text="Scout agent is working")
+        message = (
+            f'Product input from the seller:\n"""\n{job.query}\n"""\n\n'
+            f"Find about {TARGET_VIDEOS} videos."
+        )
+        outcome, text = await zoo.run_turn(
+            state.client, agents["scout"], message,
+            {"set_product": set_product, "search_youtube_shorts": search_youtube_shorts, "submit_video": submit_video},
+            on_event=_progress_hook(job),
+        )
+        if outcome != "succeeded" and not job.videos:
+            raise RuntimeError(f"scout run {outcome}")
+        job.emit("scout_done", summary=text.strip(), count=len(job.videos))
+    except Exception as e:
+        log.exception("scout failed")
+        job.emit("error", stage="scout", message=f"{type(e).__name__}: {e}")
+    finally:
+        job.busy = False
+
+
+# --- Spotter and render: make the ad -------------------------------------------------------
+
+
+def _image_block(jpeg: bytes) -> dict:
+    return {
+        "type": "image",
+        "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(jpeg).decode()},
+    }
+
+
+async def spot_product(job: Job, video: dict, path: Path, info: media.Probe, agent_id: str) -> dict | None:
+    """Ask the spotter agent for the best segment and the product's box in it."""
+    scan = min(info.duration, SCAN_SECONDS)
+    result: dict[str, Any] = {}
+
+    async def get_frames(args: dict) -> list[dict]:
+        if args.get("start_s") is None or args.get("end_s") is None:
+            times = [scan * (i + 0.5) / OVERVIEW_FRAMES for i in range(OVERVIEW_FRAMES)]
+            job.emit("clip", key=video["key"], state="spotting", detail="watching the whole video")
+        else:
+            start = max(0.0, min(float(args["start_s"]), info.duration - 1))
+            end = max(start + 1, min(float(args["end_s"]), info.duration, start + MAX_CLIP))
+            times = [start + (end - start) * i / (DENSE_FRAMES - 1) for i in range(DENSE_FRAMES)]
+            job.emit("clip", key=video["key"], state="spotting",
+                     detail=f"tracking the product from {start:.1f}s to {end:.1f}s")
+        frames = await media.sample_frames(path, times)
+        listing = ", ".join(f"#{i} t={t:.1f}s" for i, t in enumerate(times))
+        return [{"type": "text", "text": f"{len(frames)} frames in order: {listing}"}, *map(_image_block, frames)]
+
+    async def submit_highlight(args: dict) -> list[dict]:
+        if args.get("product_visible") is False:
+            result.update(visible=False)
+            return zoo.json_result({"ok": True})
+        start, end = float(args["start_s"]), float(args["end_s"])
+        if not 0 <= start < end:
+            raise ValueError("start_s must be before end_s")
+        keyframes = []
+        for item in args.get("boxes") or []:
+            ymin, xmin, ymax, xmax = (max(0.0, min(float(v) / 1000, 1.0)) for v in item["box_2d"])
+            area = (xmax - xmin) * (ymax - ymin)
+            if xmax - xmin < 0.02 or ymax - ymin < 0.02 or area > MAX_BOX_AREA:
+                continue
+            keyframes.append(render.Keyframe(float(item["t"]), (xmin, ymin, xmax, ymax)))
+        result.update(visible=True, start=start, end=end, keyframes=keyframes,
+                      caption=str(args.get("caption") or "")[:40])
+        return zoo.json_result({"ok": True, "boxes_used": len(keyframes)})
+
+    product = job.product or {"name": job.query, "visual_description": ""}
+    message = (
+        f"Product: {product['name']}\n"
+        f"What it looks like: {product.get('visual_description') or 'unknown'}\n\n"
+        f"Video id: {video['key']}\n"
+        f"Title: {video['title']}\n"
+        f"Length: {info.duration:.1f}s\n"
+    )
+    # A session occasionally stalls; a fresh one almost always goes through.
+    for attempt in range(2):
+        try:
+            outcome, _ = await zoo.run_turn(
+                state.client, agent_id, message,
+                {"get_frames": get_frames, "submit_highlight": submit_highlight}, timeout=SPOTTER_TIMEOUT,
+            )
+        except TimeoutError:
+            outcome = "timed out"
+        log.info("spotter %s attempt %d -> %s %s", video["key"], attempt + 1, outcome,
+                 {k: v for k, v in result.items() if k != "keyframes"})
+        if result:
+            break
+    return result or None
+
+
+async def make_clip(job: Job, video: dict, agent_id: str, limit: asyncio.Semaphore) -> dict | None:
+    key = video["key"]
+
+    def update(state_: str, detail: str = "") -> None:
+        job.emit("clip", key=key, state=state_, detail=detail)
+
+    async with limit:
+        try:
+            update("downloading")
+            ref = media.VideoRef(video["platform"], video["video_id"], video["url"])
+            path = await media.download(ref, job.dir / "source")
+            info = await asyncio.to_thread(media.probe, path)
+
+            update("spotting")
+            found = await spot_product(job, video, path, info, agent_id)
+            if found and found.get("visible") is False:
+                update("skipped", "The exact product was not found in this video")
+                return None
+            if found:
+                start = max(0.0, min(found["start"], info.duration - MIN_CLIP))
+                end = min(info.duration, max(start + MIN_CLIP, min(found["end"], start + MAX_CLIP)))
+                keyframes, caption = found["keyframes"], found["caption"]
+            else:
+                # The spotter gave no answer: use an early stretch without a highlight.
+                start = min(1.0, info.duration * 0.1)
+                end = min(info.duration, start + 4.0)
+                keyframes, caption = [], ""
+
+            update("rendering", f"{start:.1f}s to {end:.1f}s, {len(keyframes)} boxes")
+            out = job.dir / f"clip_{key}.mp4"
+            await asyncio.to_thread(
+                render.render_clip, path, out,
+                src_w=info.width, src_h=info.height, has_audio=info.has_audio,
+                start=start, end=end, keyframes=keyframes,
+                product=(job.product or {}).get("name") or job.query,
+                platform=video["platform"], handle=video["handle"], caption=caption,
+            )
+            update("done", caption)
+            return {"key": key, "path": out, "start": round(start, 1), "end": round(end, 1), "caption": caption}
+        except Exception as e:
+            log.exception("clip %s failed", key)
+            update("error", f"{type(e).__name__}: {e}"[:200])
+            return None
+
+
+async def run_render(job: Job, keys: list[str]) -> None:
+    job.busy = True
+    try:
+        job.emit("status", stage="render", text="Making your ad")
+        agents = await state.agents
+        limit = asyncio.Semaphore(3)
+        videos = [job.videos[k] for k in keys]
+        clips = [c for c in await asyncio.gather(*(make_clip(job, v, agents["spotter"], limit) for v in videos)) if c]
+        if not clips:
+            raise RuntimeError("none of the selected videos produced a clip")
+
+        job.emit("status", stage="render", text="Joining clips")
+        job.renders += 1
+        used = [job.videos[c["key"]] for c in clips]
+        end_card = job.dir / "end_card.mp4"
+        final = job.dir / f"ad_{job.renders}.mp4"
+        product_name = (job.product or {}).get("name") or job.query
+        await asyncio.to_thread(render.render_end_card, end_card, product_name, [v["handle"] for v in used])
+        await asyncio.to_thread(render.concat, [c["path"] for c in clips] + [end_card], final)
+
+        credits = [
+            {
+                "handle": v["handle"], "creator": v["creator"], "platform": v["platform"], "url": v["url"],
+                "creator_url": v["creator_url"], "start": c["start"], "end": c["end"], "caption": c["caption"],
+            }
+            for c, v in zip(clips, used)
+        ]
+        (job.dir / "credits.json").write_text(json.dumps(credits, indent=2, ensure_ascii=False))
+        job.emit("final", url=f"/media/{job.id}/{final.name}", credits=credits)
+    except Exception as e:
+        log.exception("render failed")
+        job.emit("error", stage="render", message=f"{type(e).__name__}: {e}")
+    finally:
+        job.busy = False
+
+
+# --- HTTP ----------------------------------------------------------------------------------
+
+
+class SearchRequest(BaseModel):
+    query: str
+
+
+class RenderRequest(BaseModel):
+    keys: list[str]
+
+
+def _job(job_id: str) -> Job:
+    job = state.jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, "unknown job")
+    return job
+
+
+@app.get("/api/health")
+async def health() -> dict:
+    task = state.agents
+    if not task.done():
+        return {"ready": False}
+    if task.exception():
+        return {"ready": False, "error": str(task.exception())}
+    return {"ready": True, "agents": task.result()}
+
+
+@app.post("/api/jobs")
+async def create_job(body: SearchRequest) -> dict:
+    query = body.query.strip()
+    if not query:
+        raise HTTPException(400, "describe the product first")
+    job_id = uuid.uuid4().hex[:10]
+    job = Job(id=job_id, query=query[:2000], dir=JOBS_DIR / job_id)
+    job.dir.mkdir(parents=True)
+    state.jobs[job_id] = job
+    asyncio.create_task(run_scout(job))
+    return {"id": job_id}
+
+
+@app.post("/api/jobs/{job_id}/render")
+async def start_render(job_id: str, body: RenderRequest) -> dict:
+    job = _job(job_id)
+    keys = [k for k in dict.fromkeys(body.keys) if k in job.videos]
+    if not keys:
+        raise HTTPException(400, "select at least one video")
+    if len(keys) > MAX_SELECTED:
+        raise HTTPException(400, f"select at most {MAX_SELECTED} videos")
+    if job.busy:
+        raise HTTPException(409, "this job is still working")
+    asyncio.create_task(run_render(job, keys))
+    return {"ok": True}
+
+
+@app.get("/api/jobs/{job_id}/events")
+async def job_events(job_id: str, request: Request) -> StreamingResponse:
+    job = _job(job_id)
+    last = request.headers.get("last-event-id")
+    sent = int(last) + 1 if last and last.isdigit() else 0
+
+    async def stream():
+        nonlocal sent
+        queue: asyncio.Queue = asyncio.Queue()
+        job.subscribers.append(queue)
+        try:
+            while True:
+                while sent < len(job.events):
+                    yield f"id: {sent}\ndata: {json.dumps(job.events[sent], ensure_ascii=False)}\n\n"
+                    sent += 1
+                try:
+                    await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
+        finally:
+            job.subscribers.remove(queue)
+
+    return StreamingResponse(
+        stream(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+JOBS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=JOBS_DIR), name="media")
+app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

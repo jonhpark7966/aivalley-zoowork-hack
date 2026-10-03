@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>As Seen On — creator videos into product ads</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="mark"></span>As Seen On</div>
+    <div class="agents" id="agents"><span class="dot"></span><span id="agents-text">Starting ZooWork agents</span></div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>Your product is already in creators' videos.<br><em>Turn those moments into your ad.</em></h1>
+      <p class="lede">Tell us what you sell. An agent finds YouTube Shorts and TikToks that feature it, you pick the ones you like, and we cut them into one ad with the product highlighted.</p>
+      <form id="search-form" class="search">
+        <input id="query" type="text" autocomplete="off" placeholder="Product name, product page link, or a description" required>
+        <button type="submit" id="search-button">Find videos</button>
+      </form>
+      <div class="examples">
+        Try
+        <button type="button" class="chip">Stanley Quencher H2.0 tumbler</button>
+        <button type="button" class="chip">Owala FreeSip water bottle</button>
+        <button type="button" class="chip">Ninja Creami ice cream maker</button>
+      </div>
+    </section>
+
+    <section id="scout" class="stage" hidden>
+      <aside class="side">
+        <div class="panel" id="product-panel" hidden>
+          <div class="eyebrow">Product</div>
+          <h2 id="product-name"></h2>
+          <div class="muted" id="product-brand"></div>
+          <p id="product-look"></p>
+        </div>
+        <div class="panel">
+          <div class="eyebrow" id="activity-title">Scout agent</div>
+          <ol class="steps" id="steps"></ol>
+          <p class="summary" id="summary" hidden></p>
+        </div>
+      </aside>
+
+      <div class="results">
+        <div class="results-head">
+          <h2><span id="count">0</span> videos found</h2>
+          <span class="muted" id="results-hint">Videos appear here as the agent finds them.</span>
+        </div>
+        <div class="grid" id="grid"></div>
+      </div>
+    </section>
+
+    <section id="studio" class="studio" hidden>
+      <div class="panel">
+        <div class="eyebrow">Studio</div>
+        <h2 id="studio-title">Making your ad</h2>
+        <ul class="clips" id="clips"></ul>
+      </div>
+      <div class="panel final" id="final" hidden>
+        <video id="final-video" controls playsinline></video>
+        <div class="final-side">
+          <div class="eyebrow">Your ad</div>
+          <h2>Ready to review</h2>
+          <p class="muted">Ask these creators for permission before you publish. Each row shows the part of their video used here.</p>
+          <table class="credits" id="credits"></table>
+          <div class="actions">
+            <a class="button" id="download" download>Download MP4</a>
+            <button type="button" class="button ghost" id="copy-credits">Copy creator list</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="bar" id="bar" hidden>
+    <span id="bar-text">Select up to 6 videos</span>
+    <button type="button" id="go" disabled>Make my ad</button>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

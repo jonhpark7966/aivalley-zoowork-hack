@@ -2,7 +2,63 @@
 
 Project repo for **The AI Commerce Gallery – Hackathon**, hosted by [ZooWork](https://zoowork.ai) and [AI Valley](https://aivalley.io).
 
-> Project idea: **TBD** — see [Idea notes](#idea-notes).
+## As Seen On
+
+A seller types in a product. A ZooWork agent finds YouTube Shorts and TikToks in which creators
+show that product, the seller ticks the ones they like, and the app cuts those moments into one
+vertical ad with the product highlighted and each creator credited. The seller gets the ad plus
+a list of creators and the exact seconds used, ready for permission requests.
+
+### How it works
+
+```
+browser ──► local server (FastAPI) ──► ZooWork Managed Agents
+                 │                         Scout: web_search, web_fetch + custom tools
+                 │                         Spotter: looks at frames, returns boxes
+                 └─► yt-dlp, ffmpeg, Pillow (download, cut, overlay, join)
+```
+
+1. **Scout agent** identifies the product (reading the product page when given a link), then
+   searches both platforms. Each find comes back through the `submit_video` custom tool, so
+   videos appear on the page one by one while the agent is still working.
+2. The seller plays the embedded videos and selects up to six.
+3. Each selected video is downloaded locally. The **Spotter agent** asks for frames through the
+   `get_frames` custom tool, which returns them as images, picks the best 3 to 5 seconds, and
+   returns a bounding box for the product in each frame.
+4. The clip is cut, the highlight is drawn along the interpolated boxes, and the clips are
+   joined with an end card.
+
+ZooWork features in use: Managed Agent API (Python SDK), two agents with persona documents,
+built-in `web_search` and `web_fetch`, application-executed custom tools, image blocks in
+custom tool results, session event streaming for live progress, and `tool_policy` to keep both
+agents out of the sandbox.
+
+### Run it
+
+Requires [uv](https://docs.astral.sh/uv/), `ffmpeg`, and a funded ZooWork Project key.
+
+```bash
+cp .env.example .env        # then set ZOOWORK_API_KEY
+uv sync
+uv run uvicorn app.server:app --port 4600
+```
+
+Open http://localhost:4600. The first start creates the two agents and records their IDs in
+`.local/agents.json`; later starts reuse them, and recreate them when their definition in
+`app/zoo.py` changes. Downloads and rendered videos go to `data/jobs/`.
+
+Set `ZOOWORK_MODEL` (or `ZOOWORK_SCOUT_MODEL` / `ZOOWORK_SPOTTER_MODEL`) to use a model other
+than `litellm/gemini-3.8-flash`.
+
+### Layout
+
+| Path | |
+|---|---|
+| `app/zoo.py` | Agent definitions (personas, custom tools), provisioning, running one turn |
+| `app/server.py` | HTTP API, job events (SSE), the scout and render pipelines |
+| `app/media.py` | URL parsing, oEmbed lookup, YouTube search, download, frame sampling |
+| `app/render.py` | Clip cutting, highlight overlay, end card, concat |
+| `app/static/` | The page |
 
 ## Event
 
@@ -116,6 +172,3 @@ Keep the key server-side; never commit it or ship it to the browser.
 - [TypeScript SDK source](https://github.com/SerendipityOneInc/zoowork-sdk-typescript)
 - [Pricing](https://zoowork.ai/pricing)
 
-## Idea notes
-
-TBD.

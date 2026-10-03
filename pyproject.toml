@@ -1,0 +1,17 @@
+[project]
+name = "aivalley-zoowork-hack"
+version = "0.1.0"
+description = "UGC ad video maker: a ZooWork agent finds short videos featuring a product, then they are cut and overlaid into one ad."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "zoowork>=0.5.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "httpx>=0.27",
+    "python-dotenv>=1.0",
+    "yt-dlp",
+    "pillow>=10.4",
+]
+
+[tool.uv]
+package = false
