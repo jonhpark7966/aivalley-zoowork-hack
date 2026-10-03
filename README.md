@@ -13,29 +13,47 @@ a list of creators and the exact seconds used, ready for permission requests.
 
 ```
 browser ──► local server (FastAPI) ──► ZooWork Managed Agents
-                 │                         Scout: web_search, web_fetch + custom tools
-                 │                         Spotter: looks at frames, returns boxes
-                 └─► yt-dlp, ffmpeg, Pillow (download, cut, overlay, join)
+                 │                         Scout    x4 sessions: web_search, web_fetch + custom tools
+                 │                         Spotter  looks at frames, returns product boxes
+                 │                         Director Claude Opus 5.5 editing in the sandbox
+                 └─► yt-dlp, ffmpeg, Pillow (download, cut, preset overlays, join)
 ```
 
-1. **Scout agent** identifies the product (reading the product page when given a link), then
-   searches both platforms. Each find comes back through the `submit_video` custom tool, so
-   videos appear on the page one by one while the agent is still working.
-2. The seller plays the embedded videos and selects up to six.
-3. Each selected video is downloaded locally. The **Spotter agent** asks for frames through the
-   `get_frames` custom tool, which returns them as images, picks the best 3 to 5 seconds, and
-   returns a bounding box for the product in each frame.
-4. The clip is cut, the highlight is drawn along the interpolated boxes, and the clips are
-   joined with an end card.
+1. **Scout agent.** One session identifies the product (reading the product page when given a
+   link) while four more search YouTube Shorts and TikTok in parallel, each from its own
+   angle. Every find comes back through the `submit_video` custom tool, so cards appear one by
+   one, up to 15. Each card then fills in the creator's follower count and the video's views,
+   and videos from the brand's own account are marked Official.
+2. The seller plays the embedded videos, selects up to six and picks a style.
+3. The selected videos are downloaded locally. What happens next depends on the style:
+   - **Presets (Spotlight, Clean, Bold).** The **Spotter agent** asks for frames through the
+     `get_frames` custom tool, which returns them as images, picks the best 3 to 5 seconds and
+     returns a bounding box for the product in each frame. The clip is then drawn locally with
+     that preset's overlay: creator handle and reach, product highlight, caption.
+   - **AI Director.** The **Director agent** (Claude Opus 5.5) gets the videos, contact sheets
+     and a brief with every creator's numbers, and edits the ad itself in its ZooWork sandbox
+     with ffmpeg and Python, then uploads the result. Its commands stream to the page live.
+4. While this runs, the page shows each creator's whole video as a filmstrip with the chosen
+   segment as a bright window, and the final cut as blocks in order.
 
-ZooWork features in use: Managed Agent API (Python SDK), two agents with persona documents,
-built-in `web_search` and `web_fetch`, application-executed custom tools, image blocks in
-custom tool results, session event streaming for live progress, and `tool_policy` to keep both
-agents out of the sandbox.
+ZooWork features in use: Managed Agent API (Python SDK), three agents with persona documents,
+parallel sessions on one agent, built-in `web_search` and `web_fetch`, application-executed
+custom tools, image blocks in custom tool results, the managed sandbox (`exec`, file and image
+tools), session event streaming for live progress, and `tool_policy` to keep the two agents
+that do not need it out of the sandbox.
+
+#### Getting files in and out of the sandbox
+
+YouTube blocks downloads from the sandbox's IP range, and the workspace file endpoints
+returned 502 on this deployment, so the Director's inputs and output travel over HTTP instead.
+When the AI Director style is first used, the server starts a second listener on port 4601
+that only serves handoff files, and opens a Cloudflare quick tunnel to it (`cloudflared` must
+be installed). Each job is reachable only under its own random token, and only while it runs.
 
 ### Run it
 
-Requires [uv](https://docs.astral.sh/uv/), `ffmpeg`, and a funded ZooWork Project key.
+Requires [uv](https://docs.astral.sh/uv/), `ffmpeg`, a funded ZooWork Project key, and
+`cloudflared` for the AI Director style.
 
 ```bash
 cp .env.example .env        # then set ZOOWORK_API_KEY
@@ -43,21 +61,23 @@ uv sync
 uv run uvicorn app.server:app --port 4600
 ```
 
-Open http://localhost:4600. The first start creates the two agents and records their IDs in
-`.local/agents.json`; later starts reuse them, and recreate them when their definition in
+Open http://localhost:4600. The first start creates the agents and records their IDs in
+`.local/agents.json`; later starts reuse them, and recreate one when its definition in
 `app/zoo.py` changes. Downloads and rendered videos go to `data/jobs/`.
 
-Set `ZOOWORK_MODEL` (or `ZOOWORK_SCOUT_MODEL` / `ZOOWORK_SPOTTER_MODEL`) to use a model other
-than `litellm/gemini-3.8-flash`.
+Set `ZOOWORK_SCOUT_MODEL`, `ZOOWORK_SPOTTER_MODEL` or `ZOOWORK_DIRECTOR_MODEL` to change a
+model. The defaults are `litellm/gemini-3.8-flash` for the Scout and Spotter and
+`litellm/claude-opus-5-5` for the Director.
 
 ### Layout
 
 | Path | |
 |---|---|
 | `app/zoo.py` | Agent definitions (personas, custom tools), provisioning, running one turn |
-| `app/server.py` | HTTP API, job events (SSE), the scout and render pipelines |
-| `app/media.py` | URL parsing, oEmbed lookup, YouTube search, download, frame sampling |
-| `app/render.py` | Clip cutting, highlight overlay, end card, concat |
+| `app/server.py` | HTTP API, job events (SSE), the scout and preset pipelines |
+| `app/director.py` | The AI Director pipeline and the sandbox file handoff |
+| `app/media.py` | URL parsing, oEmbed lookup, reach stats, Shorts search, download, frames |
+| `app/render.py` | Preset styles: clip cutting, overlays, end card, concat |
 | `app/static/` | The page |
 
 ## Event

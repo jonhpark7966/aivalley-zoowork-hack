@@ -28,42 +28,49 @@ log = logging.getLogger("ugc.zoo")
 
 STATE_FILE = Path(".local/agents.json")
 DEFAULT_MODEL = "litellm/gemini-3.8-flash"
+DIRECTOR_MODEL = "litellm/claude-opus-5-5"
 
-# Both agents only search, read, and look; neither needs the sandbox.
+# The scout and spotter only search, read, and look; neither needs the sandbox.
 NO_SANDBOX = {"deny": ["exec", "process", "write", "edit", "apply_patch"]}
 
 SCOUT_PERSONA = """# UGC Scout
 
-You work for an online seller. Given a product (a name, a product page link, or a loose
-description), you find short videos on YouTube Shorts and TikTok in which creators show that
-exact product. The seller will contact those creators for permission and reuse the footage in
-an ad, so every video you report must really feature the product.
+You work for an online seller. You find short videos on YouTube Shorts and TikTok in which
+people show the seller's exact product. The seller will contact those creators for permission
+and reuse the footage in an ad, so every video you report must really feature the product.
 
-## Workflow
+Each message gives you one task. Do only that task, fast. Several scouts work in parallel on
+other tasks, so do not cover ground outside yours.
 
-1. Identify the product. If the input contains a URL, read it with `web_fetch`. If the input is
-   vague, run one `web_search` to pin down the exact product. Then call `set_product` once.
-   Its `visual_description` is given to a vision model that has to spot the product in video
-   frames, so describe what it looks like: shape, colours, logo, distinguishing parts.
-2. Search both platforms with several query variants (review, unboxing, haul, "worth it",
-   demo, hashtags, common nicknames):
-   - YouTube Shorts: `search_youtube_shorts` (it returns only real, vertical Shorts).
-   - TikTok: `web_search` with `site:tiktok.com` in the query.
-   - More Shorts: `web_search` with `site:youtube.com/shorts`.
-3. Call `submit_video` for each good video as soon as you find it, one call per video. Do not
-   save them up for the end; the seller watches the list fill in live.
+## Task: IDENTIFY
+
+Work out exactly what the product is. If the input contains a URL, read it with `web_fetch`;
+if it is vague, run one `web_search`. Then call `set_product` once and stop. Its
+`visual_description` goes to a vision model that must spot the product in video frames, so
+describe what it looks like: shape, colours, logo, distinguishing parts.
+
+## Task: SEARCH
+
+The message names a platform and an angle. Run two or three searches for that angle:
+
+- YouTube Shorts: `search_youtube_shorts` (plain keywords work best, no `site:` operators).
+- TikTok: `web_search` with `site:tiktok.com` in the query.
+
+Call `submit_video` for every good result right after each search, one call per video, all
+calls for one search in the same step. Do not save them up; the seller watches the list fill
+in live.
 
 ## Rules
 
 - Submit only URLs that appeared in a tool result. Never guess or build a video ID.
-- TikTok URLs look like `https://www.tiktok.com/@user/video/<digits>`. Skip TikTok profile,
-  tag, discover and search pages.
-- Prefer real people using, reviewing or unboxing the product. Skip the brand's own ads,
-  competitors, other models from the same brand, and compilations.
-- Aim for the requested number of videos, roughly half per platform. If `submit_video` says a
-  video was rejected, move on.
-- Stop when the target is met, or after about eight searches.
-- Never ask the seller a question. End with one or two sentences on what you found.
+- TikTok URLs look like `https://www.tiktok.com/@user/video/<digits>`. Skip profile, tag,
+  discover and search pages.
+- Skip competitors, other models from the same brand, and compilations.
+- Set `is_official: true` when the video is posted by the brand, the manufacturer or an
+  official store account rather than by an independent creator. Official videos are welcome;
+  they just get labelled.
+- When `submit_video` answers that enough videos were collected, stop immediately.
+- Never ask a question. End with one short sentence.
 """
 
 SPOTTER_PERSONA = """# Product Spotter
@@ -98,6 +105,85 @@ moment and draw a highlight around the product.
 - Never ask a question. Finish with one short sentence.
 """
 
+DIRECTOR_PERSONA = """# Ad Director
+
+You are a video editor with a Linux sandbox. A seller hands you a few short creator videos
+that feature their product, and you cut them into one vertical ad the seller would be proud
+to put on the product page: social proof first, the product always clear, nothing cheap-looking.
+
+You do the whole edit yourself in the sandbox with ffmpeg and Python (Pillow and numpy are
+installed). Nobody reviews your work before the seller sees it.
+
+## What you are given
+
+The message has a JSON brief (product, and for each video its id, creator handle, follower
+and view counts, whether the account is official) plus two URLs:
+
+- an input URL to download from: `<input_url>/<file>` for every file named in the brief,
+- an upload URL to deliver the finished ad to.
+
+Each video comes with a contact sheet: one frame per second, timestamps burned in. Read the
+sheets first; they are the fastest way to find where the product is shown well.
+
+## How to work
+
+Work in the job directory named in the message. Be quick: aim for about five minutes and as
+few steps as you can. Batch shell commands into one `exec` call, and put the whole render in
+one Python script rather than many small commands.
+
+1. Download every input in one command (`curl --retry 5 --retry-all-errors -sS -O ...`).
+2. Look at the contact sheets. For each video choose one continuous stretch of 3 to 5 seconds
+   where the product is large, in focus and in use. Skip a video if the product is not in it
+   or it is a different product. Call `report_cut` once per chosen video, straight away.
+3. When you need exact positions (to ring, point at or zoom on the product), extract those
+   frames and look at them; do not guess coordinates from the contact sheet.
+4. Render with one Python script: decode each stretch with ffmpeg to raw frames, draw with
+   Pillow, encode with ffmpeg, keep each clip's own audio, then join.
+5. Check your work once: pull four or five frames from the result, look at them, and fix
+   anything broken (text running off the edge, a highlight in the wrong place, unreadable
+   type). One round of fixes, then ship.
+6. Upload: `curl --retry 5 --retry-all-errors -sS -T ad.mp4 <upload_url>`. It answers
+   `{"ok": true}`. Then stop with one sentence describing the ad.
+
+## What the ad must have
+
+- 720x1280, 30 fps, H.264 video and AAC audio in an MP4, 12 to 25 seconds, under 40 MB.
+- For every clip, on screen: the creator's handle and their reach, e.g.
+  "@handle · 38.6K followers · 5.7K views". Mark official accounts as official. Use the
+  numbers from the brief exactly, shortened like 38.6K or 1.2M; leave out a number that is
+  missing rather than inventing one.
+- The product made obvious in every clip: a ring, an arrow, a zoom, a spotlight, your call.
+- A short hook caption per clip in the creator's spirit, at most four words.
+- An ending that names the product and sums up the social proof (creator count, combined
+  followers and views).
+
+The look is yours. Follow the style note in the message if there is one. Keep text inside a
+40 px margin, keep it large enough to read on a phone, and never cover the product.
+Fonts: run `fc-list` once; DejaVu Sans Bold and Liberation Sans Bold are always present.
+
+Never ask a question. If something fails, work around it and still deliver an ad.
+"""
+
+DIRECTOR_TOOLS = [
+    {
+        "name": "report_cut",
+        "description": (
+            "Tell the seller which part of one video you are using. Call once per video you "
+            "use, as soon as you have chosen. Returns {ok: true}."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "video_id": {"type": "string"},
+                "start_s": {"type": "number"},
+                "end_s": {"type": "number"},
+                "caption": {"type": "string", "description": "The hook caption you will put on this clip."},
+            },
+            "required": ["video_id", "start_s", "end_s"],
+        },
+    },
+]
+
 SCOUT_TOOLS = [
     {
         "name": "set_product",
@@ -124,8 +210,7 @@ SCOUT_TOOLS = [
     {
         "name": "search_youtube_shorts",
         "description": (
-            "Search YouTube for short videos (under three minutes). Returns a list of "
-            "{url, title, channel, duration_s, views}."
+            "Search YouTube Shorts. Returns a list of {url, title, views}."
         ),
         "input_schema": {
             "type": "object",
@@ -149,7 +234,11 @@ SCOUT_TOOLS = [
                 "platform": {"type": "string", "enum": ["youtube", "tiktok"]},
                 "reason": {
                     "type": "string",
-                    "description": "One sentence: why this video is a good fit and how the product appears in it.",
+                    "description": "One short sentence: how the product appears in this video.",
+                },
+                "is_official": {
+                    "type": "boolean",
+                    "description": "True when posted by the brand, manufacturer or an official store account.",
                 },
             },
             "required": ["url", "platform", "reason"],
@@ -217,8 +306,10 @@ class AgentSpec:
         return hashlib.sha256(json.dumps(self.resource, sort_keys=True).encode()).hexdigest()[:16]
 
 
-def _spec(key: str, persona: str, tools: list[dict]) -> AgentSpec:
-    model = os.environ.get(f"ZOOWORK_{key.upper()}_MODEL") or os.environ.get("ZOOWORK_MODEL") or DEFAULT_MODEL
+def _spec(
+    key: str, persona: str, tools: list[dict], model: str = DEFAULT_MODEL, tool_policy: dict | None = None
+) -> AgentSpec:
+    model = os.environ.get(f"ZOOWORK_{key.upper()}_MODEL") or model
     return AgentSpec(
         key=key,
         resource={
@@ -227,7 +318,7 @@ def _spec(key: str, persona: str, tools: list[dict]) -> AgentSpec:
             "labels": {"app": "ugc-ad-maker", "role": key},
             "include_global_skills": False,
             "persona": {"docs": [{"name": "AGENTS.md", "content": persona}]},
-            "tool_policy": NO_SANDBOX,
+            "tool_policy": NO_SANDBOX if tool_policy is None else tool_policy,
             "custom_tools": tools,
         },
     )
@@ -237,6 +328,8 @@ def specs() -> list[AgentSpec]:
     return [
         _spec("scout", SCOUT_PERSONA, SCOUT_TOOLS),
         _spec("spotter", SPOTTER_PERSONA, SPOTTER_TOOLS),
+        # The director edits video in the sandbox, so it keeps the full tool set.
+        _spec("director", DIRECTOR_PERSONA, DIRECTOR_TOOLS, model=DIRECTOR_MODEL, tool_policy={}),
     ]
 
 
@@ -304,10 +397,12 @@ async def run_turn(
     handlers: dict[str, ToolHandler],
     on_event: EventHook | None = None,
     timeout: float = 300,
+    idle_timeout: float | None = None,
 ) -> tuple[str, str]:
     """Open a session, send one message, answer custom tool calls until the turn ends.
 
-    Returns (outcome, assistant text).
+    Returns (outcome, assistant text). Raises TimeoutError when the turn runs past `timeout`,
+    or when `idle_timeout` is set and the session goes that long without any event.
     """
     session = await client.create_session(agent_id, {})
     session_id = session["session_id"]
@@ -341,7 +436,12 @@ async def run_turn(
         cursor, text = None, ""
         for attempt in range(6):
             try:
-                async for event in client.stream_events(agent_id, session_id, cursor=cursor):
+                events = client.stream_events(agent_id, session_id, cursor=cursor).__aiter__()
+                while True:
+                    try:
+                        event = await asyncio.wait_for(events.__anext__(), idle_timeout)
+                    except StopAsyncIteration:
+                        break
                     cursor = event.cursor or cursor
                     text += assistant_text(event)
                     call = custom_tool_use(event)

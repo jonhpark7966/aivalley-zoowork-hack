@@ -20,9 +20,6 @@ YOUTUBE_PATTERNS = [
 ]
 TIKTOK_PATTERN = re.compile(r"tiktok\.com/@([A-Za-z0-9._-]+)/video/(\d{10,25})")
 
-# Shorts can run up to three minutes.
-MAX_SHORT_SECONDS = 180
-
 
 @dataclass
 class VideoRef:
@@ -91,33 +88,75 @@ async def lookup(http: httpx.AsyncClient, ref: VideoRef) -> dict:
     }
 
 
-def _search_youtube(query: str, limit: int) -> list[dict]:
-    opts = {"quiet": True, "no_warnings": True, "extract_flat": True, "skip_download": True}
+BROWSER_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+)
+
+
+def _video_stats(url: str) -> dict:
+    opts = {"quiet": True, "no_warnings": True, "skip_download": True}
     with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(f"ytsearch{limit * 3}:{query} #shorts", download=False)
-    found = []
-    for entry in info.get("entries") or []:
-        duration = entry.get("duration")
-        if not entry.get("id") or not duration or duration > MAX_SHORT_SECONDS:
-            continue
-        found.append(
-            {
-                "id": entry["id"],
-                "url": f"https://www.youtube.com/shorts/{entry['id']}",
-                "title": entry.get("title"),
-                "channel": entry.get("channel") or entry.get("uploader"),
-                "duration_s": int(duration),
-                "views": entry.get("view_count"),
-            }
-        )
+        info = ydl.extract_info(url, download=False)
+    return {
+        "views": info.get("view_count"),
+        "likes": info.get("like_count"),
+        "followers": info.get("channel_follower_count"),
+        "duration": info.get("duration"),
+        "verified": bool(info.get("channel_is_verified")),
+    }
+
+
+async def stats(http: httpx.AsyncClient, ref: VideoRef, handle: str) -> dict:
+    """Views and likes for the video, follower count for its creator. Missing values are None."""
+    try:
+        found = await asyncio.to_thread(_video_stats, ref.url)
+    except Exception:
+        found = {}
+    if ref.platform == "tiktok":
+        # The video page has no follower count; the creator's profile page embeds it.
+        try:
+            res = await http.get(
+                f"https://www.tiktok.com/{handle}", headers={"User-Agent": BROWSER_UA}, timeout=12
+            )
+            if m := re.search(r'"followerCount":(\d+)', res.text):
+                found["followers"] = int(m.group(1))
+            if m := re.search(r'"verified":(true|false)', res.text):
+                found["verified"] = m.group(1) == "true"
+        except httpx.HTTPError:
+            pass
     return found
 
 
+# YouTube search filter "Type: Shorts".
+SHORTS_FILTER = "EgIQCQ=="
+
+
 async def search_youtube(http: httpx.AsyncClient, query: str, limit: int = 10) -> list[dict]:
-    """Short-length search results, keeping only real (vertical) Shorts."""
-    found = await asyncio.to_thread(_search_youtube, query, limit)
-    checks = await asyncio.gather(*(is_short(http, v.pop("id")) for v in found))
-    return [v for v, ok in zip(found, checks) if ok][:limit]
+    """Shorts matching the query, read from YouTube's own search results page."""
+    res = await http.get(
+        "https://www.youtube.com/results",
+        params={"search_query": query, "sp": SHORTS_FILTER},
+        headers={"User-Agent": BROWSER_UA, "Accept-Language": "en-US,en;q=0.9"},
+        timeout=15,
+    )
+    found: dict[str, dict] = {}
+    for m in re.finditer(rf"/shorts/({YOUTUBE_ID})", res.text):
+        video_id = m.group(1)
+        if video_id in found:
+            continue
+        # Each result carries a label like "Title, 74 thousand views - play Short".
+        at = res.text.find(video_id)
+        label = re.search(r'"accessibilityText":"((?:[^"\\]|\\.){5,300})"', res.text[at:at + 2500])
+        title, _, views = (label.group(1) if label else "").rpartition(", ")
+        found[video_id] = {
+            "url": f"https://www.youtube.com/shorts/{video_id}",
+            "title": title,
+            "views": views.removesuffix(" - play Short"),
+        }
+        if len(found) >= limit:
+            break
+    return list(found.values())
 
 
 def _download(ref: VideoRef, dest_dir: Path) -> Path:
@@ -188,6 +227,19 @@ def _grab_frame(path: Path, t: float, label: str) -> bytes:
         capture_output=True,
         check=True,
     ).stdout
+
+
+def filmstrip(path: Path, out: Path, duration: float, frames: int = 12) -> Path:
+    """One wide image of evenly spaced frames, used to show where a clip was cut from."""
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-v", "error", "-i", str(path),
+            "-vf", f"fps={frames / max(duration, 0.1):.5f},scale=-2:128,tile={frames}x1",
+            "-frames:v", "1", "-q:v", "4", str(out),
+        ],
+        check=True,
+    )
+    return out
 
 
 async def sample_frames(path: Path, times: list[float]) -> list[bytes]:

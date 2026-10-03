@@ -38,7 +38,7 @@
           <p id="product-look"></p>
         </div>
         <div class="panel">
-          <div class="eyebrow" id="activity-title">Scout agent</div>
+          <div class="eyebrow" id="activity-title">Scout agents</div>
           <ol class="steps" id="steps"></ol>
           <p class="summary" id="summary" hidden></p>
         </div>
@@ -47,7 +47,7 @@
       <div class="results">
         <div class="results-head">
           <h2><span id="count">0</span> videos found</h2>
-          <span class="muted" id="results-hint">Videos appear here as the agent finds them.</span>
+          <span class="muted" id="results-hint">Videos appear here as the agents find them.</span>
         </div>
         <div class="grid" id="grid"></div>
       </div>
@@ -55,15 +55,26 @@
 
     <section id="studio" class="studio" hidden>
       <div class="panel">
-        <div class="eyebrow">Studio</div>
+        <div class="eyebrow" id="studio-eyebrow">Studio</div>
         <h2 id="studio-title">Making your ad</h2>
+        <p class="muted studio-hint">Each strip is one creator's whole video. The bright window is the part that goes into your ad.</p>
         <ul class="clips" id="clips"></ul>
+      </div>
+      <div class="panel" id="cut-panel" hidden>
+        <div class="eyebrow">Final cut</div>
+        <div class="cut" id="cut"></div>
+        <div class="muted" id="cut-total"></div>
+      </div>
+      <div class="panel" id="log-panel" hidden>
+        <div class="eyebrow">Director · Claude Opus 5.5 in a ZooWork sandbox</div>
+        <ol class="log" id="log"></ol>
       </div>
       <div class="panel final" id="final" hidden>
         <video id="final-video" controls playsinline></video>
         <div class="final-side">
           <div class="eyebrow">Your ad</div>
           <h2>Ready to review</h2>
+          <div class="final-reach" id="final-reach"></div>
           <p class="muted">Ask these creators for permission before you publish. Each row shows the part of their video used here.</p>
           <table class="credits" id="credits"></table>
           <div class="actions">
@@ -76,7 +87,11 @@
   </main>
 
   <div class="bar" id="bar" hidden>
-    <span id="bar-text">Select up to 6 videos</span>
+    <div class="bar-info">
+      <span id="bar-text">Select up to 6 videos</span>
+      <span class="muted" id="style-note"></span>
+    </div>
+    <div class="styles" id="styles"></div>
     <button type="button" id="go" disabled>Make my ad</button>
   </div>
 
