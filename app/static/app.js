@@ -25,11 +25,14 @@ const el = (tag, className, text) => {
   return node;
 };
 
+// Where the engine is: this origin when the engine serves the page, localhost when the page is hosted elsewhere.
+const LOCAL_ENGINE = 'http://localhost:4600';
+let API = '';
 let jobId = null;
 let source = null;
 let scouting = false;
 let rendering = false;
-let style = 'spotlight';
+let style = 'hype';
 let styles = [];
 const videos = new Map();
 const selected = new Set();
@@ -61,35 +64,63 @@ function clock(seconds) {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
 }
 
-async function pollAgents() {
-  try {
-    const health = await (await fetch('/api/health')).json();
-    if (health.ready) {
-      $('agents').className = 'agents ready';
-      $('agents-text').textContent = 'ZooWork agents ready: Scout, Spotter, Director';
-      return;
+async function health(base) {
+  const res = await fetch(`${base}/api/health`);
+  const body = await res.json();
+  if (typeof body.ready !== 'boolean') throw new Error('not the engine');
+  return body;
+}
+
+// Find the engine, then wait for its agents. Keeps trying, so starting the engine later just works.
+async function connect() {
+  let state = null;
+  for (const base of ['', LOCAL_ENGINE]) {
+    try {
+      state = await health(base);
+      API = base;
+      break;
+    } catch {
+      // Not there; try the next place.
     }
-    if (health.error) {
-      $('agents').className = 'agents failed';
-      $('agents-text').textContent = `ZooWork agents failed: ${health.error}`;
-      return;
-    }
-  } catch {
-    // The server may still be starting.
   }
-  setTimeout(pollAgents, 1500);
+  const connected = state !== null;
+  $('engine').hidden = connected;
+  $('search-button').disabled = !connected || scouting;
+  if (!connected) {
+    $('agents').className = 'agents failed';
+    $('agents-text').textContent = 'No engine connected';
+  } else if (state.ready) {
+    $('agents').className = 'agents ready';
+    $('agents-text').textContent = `ZooWork agents ready${API ? ' · engine on this computer' : ''}`;
+    if (!styles.length) await loadStyles();
+    return;
+  } else if (state.error) {
+    $('agents').className = 'agents failed';
+    $('agents-text').textContent = `ZooWork agents failed: ${state.error}`;
+    return;
+  } else {
+    $('agents').className = 'agents';
+    $('agents-text').textContent = 'Starting ZooWork agents';
+  }
+  setTimeout(connect, connected ? 1500 : 3000);
 }
 
 async function loadStyles() {
-  styles = await (await fetch('/api/styles')).json();
+  styles = await (await fetch(`${API}/api/styles`)).json();
   $('styles').replaceChildren(...styles.map((item) => {
     const button = el('button', `style ${item.kind}`, item.label);
     button.type = 'button';
     button.dataset.key = item.key;
     button.title = item.description;
-    if (item.kind === 'agent') button.append(el('span', 'tag', 'Opus 5.5'));
+    if (item.badge) button.append(el('span', 'tag', item.badge));
+    button.classList.toggle('off', !item.enabled);
     button.onclick = () => {
       if (rendering) return;
+      if (!item.enabled) {
+        // Explain what would switch it on rather than doing nothing.
+        $('style-note').textContent = item.description;
+        return;
+      }
       style = item.key;
       updateBar();
     };
@@ -117,14 +148,14 @@ async function startSearch(query) {
   scouting = true;
   $('search-button').disabled = true;
   addStep('boot', 'running', 'Starting', 'Handing your product to the scout agents');
-  const res = await fetch('/api/jobs', {
+  const res = await fetch(`${API}/api/jobs`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
   });
   if (!res.ok) return fail((await res.json()).detail || 'Could not start the search');
   jobId = (await res.json()).id;
-  source = new EventSource(`/api/jobs/${jobId}/events`);
+  source = new EventSource(`${API}/api/jobs/${jobId}/events`);
   source.onmessage = (message) => handle(JSON.parse(message.data));
 }
 
@@ -311,6 +342,7 @@ function updateBar() {
     button.classList.toggle('active', button.dataset.key === style);
     button.disabled = rendering;
   }
+  $('log-panel').dataset.style = style;
   $('go').disabled = !n || scouting || rendering;
   $('go').textContent = rendering ? 'Making your ad…' : 'Make my ad';
 }
@@ -331,7 +363,7 @@ async function startRender() {
   for (const key of renderOrder) updateClip({ key, state: 'queued', detail: '' });
   $('studio').scrollIntoView({ behavior: 'smooth' });
 
-  const res = await fetch(`/api/jobs/${jobId}/render`, {
+  const res = await fetch(`${API}/api/jobs/${jobId}/render`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ keys: renderOrder, style }),
@@ -382,7 +414,7 @@ function paintClip(key) {
 
   const strip = row.querySelector('.strip');
   const img = strip.querySelector('img');
-  if (clip.filmstrip && img.getAttribute('src') !== clip.filmstrip) img.src = clip.filmstrip;
+  if (clip.filmstrip && img.getAttribute('src') !== API + clip.filmstrip) img.src = API + clip.filmstrip;
   strip.classList.toggle('empty', !clip.filmstrip);
 
   // The chosen segment, or the one the spotter is currently checking, as a window on the strip.
@@ -439,9 +471,9 @@ function showFinal(event) {
   updateBar();
   $('studio-title').textContent = `Ad made from ${credits.length} creator clip${credits.length === 1 ? '' : 's'}`;
   $('final').hidden = false;
-  $('final-video').src = event.url;
+  $('final-video').src = API + event.url;
   $('final-video').play().catch(() => {});
-  $('download').href = event.url;
+  $('download').href = API + event.url;
 
   const followers = credits.reduce((sum, c) => sum + (c.followers || 0), 0);
   const views = credits.reduce((sum, c) => sum + (c.views || 0), 0);
@@ -493,5 +525,4 @@ $('copy-credits').onclick = async () => {
   setTimeout(() => { $('copy-credits').textContent = 'Copy creator list'; }, 1500);
 };
 
-pollAgents();
-loadStyles();
+connect();

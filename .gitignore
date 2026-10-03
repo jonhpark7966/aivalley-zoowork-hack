@@ -6,3 +6,7 @@ node_modules/
 data/
 .venv/
 __pycache__/
+.vercel/
+
+# The reference ad contains third-party creator footage; keep it out of the public repo.
+showcase/*.mp4

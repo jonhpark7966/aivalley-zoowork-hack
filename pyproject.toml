@@ -11,6 +11,8 @@ dependencies = [
     "python-dotenv>=1.0",
     "yt-dlp",
     "pillow>=10.4",
+    "numpy>=2.5.3",
+    "opencv-python-headless>=5.0.0.93",
 ]
 
 [tool.uv]

@@ -1,0 +1,718 @@
+{
+ "tag": "STANLEY QUENCHER H2.0",
+ "product_lines": [
+  "STANLEY",
+  "QUENCHER H2.0"
+ ],
+ "cta": "GET YOURS TODAY",
+ "intro": [
+  {
+   "src": "/Users/jonhpark/conductor/workspaces/aivalley-zoowork-hack/tirana/data/jobs/20c5912c2f/source/tiktok_7634221398096989471.mp4",
+   "start": 8.3,
+   "word": "THE INTERNET"
+  },
+  {
+   "src": "/Users/jonhpark/conductor/workspaces/aivalley-zoowork-hack/tirana/data/jobs/20c5912c2f/source/youtube_r3ztwAsakOU.mp4",
+   "start": 4.8,
+   "word": "IS OBSESSED"
+  },
+  {
+   "src": "/Users/jonhpark/conductor/workspaces/aivalley-zoowork-hack/tirana/data/jobs/d89ac05452/source/tiktok_7340096228866231558.mp4",
+   "start": 2.1,
+   "word": "WITH THIS"
+  }
+ ],
+ "clips": [
+  {
+   "handle": "@maferaraujok",
+   "platform": "tiktok",
+   "followers": 156400,
+   "views": 31700,
+   "official": false,
+   "caption": "MY STANLEY ERA",
+   "shots": [
+    {
+     "src": "/Users/jonhpark/conductor/workspaces/aivalley-zoowork-hack/tirana/data/jobs/d89ac05452/source/tiktok_7340096228866231558.mp4",
+     "start": 1.8,
+     "end": 4.3,
+     "boxes": [
+      [
+       1.8,
+       0.652,
+       0.0,
+       1.0,
+       0.583
+      ],
+      [
+       2.0,
+       0.315,
+       0.189,
+       1.0,
+       0.992
+      ],
+      [
+       2.3,
+       0.171,
+       0.359,
+       0.977,
+       0.951
+      ],
+      [
+       2.5,
+       0.245,
+       0.389,
+       1.0,
+       0.96
+      ],
+      [
+       2.7,
+       0.355,
+       0.315,
+       1.0,
+       0.868
+      ],
+      [
+       2.9,
+       0.467,
+       0.265,
+       1.0,
+       0.946
+      ],
+      [
+       3.2,
+       0.403,
+       0.307,
+       0.991,
+       0.964
+      ],
+      [
+       3.4,
+       0.388,
+       0.356,
+       0.974,
+       0.99
+      ],
+      [
+       3.6,
+       0.387,
+       0.445,
+       1.0,
+       0.908
+      ],
+      [
+       3.8,
+       0.399,
+       0.476,
+       1.0,
+       0.936
+      ],
+      [
+       4.1,
+       0.408,
+       0.481,
+       1.0,
+       0.959
+      ],
+      [
+       4.3,
+       0.423,
+       0.483,
+       1.0,
+       0.969
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "handle": "@samtrevii",
+   "platform": "tiktok",
+   "followers": 9761,
+   "views": 80900,
+   "official": false,
+   "caption": "WORTH THE UPGRADE",
+   "shots": [
+    {
+     "src": "/Users/jonhpark/conductor/workspaces/aivalley-zoowork-hack/tirana/data/jobs/8861ce6208/source/tiktok_7141192012316871979.mp4",
+     "start": 5.0,
+     "end": 7.5,
+     "boxes": [
+      [
+       5.0,
+       0.0,
+       0.18,
+       0.591,
+       0.94
+      ],
+      [
+       5.2,
+       0.0,
+       0.18,
+       0.562,
+       0.935
+      ],
+      [
+       5.5,
+       0.0,
+       0.18,
+       0.528,
+       0.935
+      ],
+      [
+       5.7,
+       0.0,
+       0.18,
+       0.53,
+       0.935
+      ],
+      [
+       5.9,
+       0.0,
+       0.18,
+       0.54,
+       0.935
+      ],
+      [
+       6.1,
+       0.0,
+       0.18,
+       0.55,
+       0.935
+      ],
+      [
+       6.4,
+       0.0,
+       0.18,
+       0.609,
+       0.915
+      ],
+      [
+       6.6,
+       0.0,
+       0.18,
+       0.571,
+       0.885
+      ],
+      [
+       6.8,
+       0.0,
+       0.18,
+       0.56,
+       0.805
+      ],
+      [
+       7.0,
+       0.0,
+       0.18,
+       0.547,
+       0.78
+      ],
+      [
+       7.3,
+       0.0,
+       0.197,
+       0.547,
+       0.915
+      ],
+      [
+       7.5,
+       0.0,
+       0.198,
+       0.542,
+       0.915
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "handle": "@leslie.gloriaxo",
+   "platform": "tiktok",
+   "followers": 38300,
+   "views": 972,
+   "official": false,
+   "caption": "GOT THE HYPE",
+   "shots": [
+    {
+     "src": "/Users/jonhpark/conductor/workspaces/aivalley-zoowork-hack/tirana/data/jobs/3bf33c3530/source/tiktok_7654831376461548813.mp4",
+     "start": 1.0,
+     "end": 3.5,
+     "boxes": [
+      [
+       1.0,
+       0.0,
+       0.298,
+       0.692,
+       0.942
+      ],
+      [
+       1.2,
+       0.0,
+       0.304,
+       0.688,
+       0.924
+      ],
+      [
+       1.5,
+       0.0,
+       0.312,
+       0.668,
+       0.913
+      ],
+      [
+       1.7,
+       0.0,
+       0.319,
+       0.676,
+       0.904
+      ],
+      [
+       1.9,
+       0.0,
+       0.317,
+       0.688,
+       0.896
+      ],
+      [
+       2.1,
+       0.0,
+       0.307,
+       0.608,
+       0.876
+      ],
+      [
+       2.4,
+       0.0,
+       0.307,
+       0.604,
+       0.874
+      ],
+      [
+       2.6,
+       0.0,
+       0.307,
+       0.606,
+       0.885
+      ],
+      [
+       2.8,
+       0.0,
+       0.309,
+       0.646,
+       0.903
+      ],
+      [
+       3.0,
+       0.0,
+       0.32,
+       0.664,
+       0.933
+      ],
+      [
+       3.3,
+       0.0,
+       0.308,
+       0.662,
+       0.917
+      ],
+      [
+       3.5,
+       0.0,
+       0.311,
+       0.634,
+       0.917
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "handle": "@TryItWithTNT",
+   "platform": "youtube",
+   "followers": 4340,
+   "views": 841,
+   "official": false,
+   "caption": "COLD FOR HOURS",
+   "shots": [
+    {
+     "src": "/Users/jonhpark/conductor/workspaces/aivalley-zoowork-hack/tirana/data/jobs/20c5912c2f/source/youtube_r3ztwAsakOU.mp4",
+     "start": 1.5,
+     "end": 4.0,
+     "boxes": [
+      [
+       1.5,
+       0.126,
+       0.287,
+       0.495,
+       0.633
+      ],
+      [
+       1.7,
+       0.126,
+       0.292,
+       0.497,
+       0.642
+      ],
+      [
+       2.0,
+       0.093,
+       0.268,
+       0.452,
+       0.617
+      ],
+      [
+       2.2,
+       0.004,
+       0.248,
+       0.383,
+       0.606
+      ],
+      [
+       2.4,
+       0.095,
+       0.282,
+       0.461,
+       0.634
+      ],
+      [
+       2.6,
+       0.118,
+       0.288,
+       0.485,
+       0.64
+      ],
+      [
+       2.9,
+       0.126,
+       0.288,
+       0.492,
+       0.639
+      ],
+      [
+       3.1,
+       0.113,
+       0.289,
+       0.487,
+       0.642
+      ],
+      [
+       3.3,
+       0.112,
+       0.288,
+       0.487,
+       0.642
+      ],
+      [
+       3.5,
+       0.118,
+       0.295,
+       0.48,
+       0.648
+      ],
+      [
+       3.8,
+       0.124,
+       0.29,
+       0.487,
+       0.642
+      ],
+      [
+       4.0,
+       0.126,
+       0.291,
+       0.492,
+       0.642
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "handle": "@stanley1913",
+   "platform": "tiktok",
+   "followers": 1700000,
+   "views": 696900,
+   "official": true,
+   "caption": "CUPHOLDER READY",
+   "shots": [
+    {
+     "src": "/Users/jonhpark/conductor/workspaces/aivalley-zoowork-hack/tirana/data/jobs/20c5912c2f/source/tiktok_7634221398096989471.mp4",
+     "start": 2.9,
+     "end": 3.9,
+     "boxes": [
+      [
+       2.9,
+       0.193,
+       0.636,
+       0.507,
+       0.863
+      ],
+      [
+       3.0,
+       0.297,
+       0.258,
+       0.829,
+       0.722
+      ],
+      [
+       3.1,
+       0.287,
+       0.277,
+       0.796,
+       0.722
+      ],
+      [
+       3.2,
+       0.273,
+       0.277,
+       0.786,
+       0.725
+      ],
+      [
+       3.3,
+       0.273,
+       0.278,
+       0.789,
+       0.725
+      ],
+      [
+       3.4,
+       0.277,
+       0.267,
+       0.795,
+       0.726
+      ],
+      [
+       3.4,
+       0.281,
+       0.267,
+       0.8,
+       0.728
+      ],
+      [
+       3.5,
+       0.281,
+       0.266,
+       0.803,
+       0.73
+      ],
+      [
+       3.6,
+       0.278,
+       0.266,
+       0.804,
+       0.73
+      ],
+      [
+       3.7,
+       0.272,
+       0.264,
+       0.802,
+       0.733
+      ]
+     ]
+    },
+    {
+     "src": "/Users/jonhpark/conductor/workspaces/aivalley-zoowork-hack/tirana/data/jobs/20c5912c2f/source/tiktok_7634221398096989471.mp4",
+     "start": 8.0,
+     "end": 9.5,
+     "boxes": [
+      [
+       8.0,
+       0.056,
+       0.23,
+       0.465,
+       0.608
+      ],
+      [
+       8.1,
+       0.149,
+       0.302,
+       0.528,
+       0.661
+      ],
+      [
+       8.3,
+       0.169,
+       0.315,
+       0.558,
+       0.68
+      ],
+      [
+       8.4,
+       0.219,
+       0.309,
+       0.611,
+       0.693
+      ],
+      [
+       8.5,
+       0.266,
+       0.292,
+       0.65,
+       0.688
+      ],
+      [
+       8.7,
+       0.247,
+       0.273,
+       0.672,
+       0.672
+      ],
+      [
+       8.8,
+       0.249,
+       0.272,
+       0.677,
+       0.675
+      ],
+      [
+       9.0,
+       0.281,
+       0.214,
+       0.878,
+       0.735
+      ],
+      [
+       9.1,
+       0.278,
+       0.212,
+       0.875,
+       0.736
+      ],
+      [
+       9.2,
+       0.278,
+       0.204,
+       0.877,
+       0.737
+      ],
+      [
+       9.4,
+       0.28,
+       0.209,
+       0.881,
+       0.739
+      ],
+      [
+       9.5,
+       0.278,
+       0.219,
+       0.878,
+       0.741
+      ]
+     ]
+    }
+   ]
+  }
+ ],
+ "recap": [
+  {
+   "src": "/Users/jonhpark/conductor/workspaces/aivalley-zoowork-hack/tirana/data/jobs/8861ce6208/source/tiktok_7141192012316871979.mp4",
+   "start": 2.6
+  },
+  {
+   "src": "/Users/jonhpark/conductor/workspaces/aivalley-zoowork-hack/tirana/data/jobs/3bf33c3530/source/tiktok_7654831376461548813.mp4",
+   "start": 6.6
+  },
+  {
+   "src": "/Users/jonhpark/conductor/workspaces/aivalley-zoowork-hack/tirana/data/jobs/20c5912c2f/source/youtube_r3ztwAsakOU.mp4",
+   "start": 5.3
+  },
+  {
+   "src": "/Users/jonhpark/conductor/workspaces/aivalley-zoowork-hack/tirana/data/jobs/20c5912c2f/source/tiktok_7634221398096989471.mp4",
+   "start": 10.2
+  }
+ ],
+ "hero": {
+  "src": "/Users/jonhpark/conductor/workspaces/aivalley-zoowork-hack/tirana/data/jobs/20c5912c2f/source/youtube_r3ztwAsakOU.mp4",
+  "start": 4.6,
+  "end": 7.8,
+  "boxes": [
+   [
+    4.6,
+    0.138,
+    0.093,
+    0.927,
+    0.831
+   ],
+   [
+    4.9,
+    0.174,
+    0.092,
+    0.963,
+    0.831
+   ],
+   [
+    5.1,
+    0.17,
+    0.105,
+    0.959,
+    0.847
+   ],
+   [
+    5.4,
+    0.145,
+    0.103,
+    0.937,
+    0.843
+   ],
+   [
+    5.6,
+    0.144,
+    0.1,
+    0.936,
+    0.839
+   ],
+   [
+    5.9,
+    0.134,
+    0.098,
+    0.922,
+    0.836
+   ],
+   [
+    6.1,
+    0.134,
+    0.091,
+    0.922,
+    0.829
+   ],
+   [
+    6.4,
+    0.14,
+    0.1,
+    0.928,
+    0.837
+   ],
+   [
+    6.6,
+    0.179,
+    0.11,
+    0.984,
+    0.861
+   ],
+   [
+    6.9,
+    0.166,
+    0.095,
+    0.973,
+    0.848
+   ],
+   [
+    7.1,
+    0.168,
+    0.105,
+    0.97,
+    0.854
+   ],
+   [
+    7.4,
+    0.164,
+    0.095,
+    0.97,
+    0.844
+   ]
+  ]
+ }
+}

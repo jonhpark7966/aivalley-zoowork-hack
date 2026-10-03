@@ -183,6 +183,17 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 }
 .style.active { background: var(--panel); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
 .style.agent.active { box-shadow: inset 0 0 0 1px var(--accent); }
+.style.off { opacity: 0.45; }
+.style.local.active { box-shadow: inset 0 0 0 1px #25f4ee; }
+.engine {
+  margin-top: 18px; padding: 16px 18px; border: 1px solid var(--accent); border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel)); font-size: 14px; display: grid; gap: 8px;
+}
+.engine code {
+  font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace; background: #0a0a0e;
+  padding: 2px 6px; border-radius: 6px; overflow-wrap: anywhere;
+}
+.engine > code { display: block; padding: 10px 12px; }
 .style .tag {
   font-size: 10px; font-weight: 800; letter-spacing: 0.04em;
   color: #111; background: var(--accent); border-radius: 999px; padding: 2px 7px;

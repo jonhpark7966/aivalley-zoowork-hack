@@ -21,6 +21,12 @@
         <input id="query" type="text" autocomplete="off" placeholder="Product name, product page link, or a description" required>
         <button type="submit" id="search-button">Find videos</button>
       </form>
+      <div class="engine" id="engine" hidden>
+        <strong>This page needs its engine.</strong>
+        Videos are downloaded and edited on your own computer, so the engine runs there. Start it and this page connects by itself:
+        <code>git clone https://github.com/jonhpark7966/aivalley-zoowork-hack &amp;&amp; cd aivalley-zoowork-hack &amp;&amp; uv run uvicorn app.server:app --port 4600</code>
+        <span class="muted">Add this page's address to <code>HOSTED_ORIGINS</code> in <code>.env</code>, and set <code>LOCAL_CLAUDE=1</code> to let your own Claude edit.</span>
+      </div>
       <div class="examples">
         Try
         <button type="button" class="chip">Stanley Quencher H2.0 tumbler</button>

@@ -6,7 +6,9 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import re
+import shutil
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -16,11 +18,12 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import director, media, render, zoo
+from . import director, hype, media, render, zoo
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s", datefmt="%H:%M:%S")
@@ -43,6 +46,9 @@ MAX_BOX_AREA = 0.55
 SPOTTER_TIMEOUT = 90
 # A healthy spotter session never goes this long without an event; a stalled one never recovers.
 SPOTTER_IDLE = 30
+# Opt-in: let the Claude Code CLI on this machine edit the ad. Only meaningful when self-hosting.
+LOCAL_CLAUDE_KEY = "local"
+LOCAL_CLAUDE = os.environ.get("LOCAL_CLAUDE") == "1" and shutil.which("claude") is not None
 
 
 @dataclass
@@ -109,6 +115,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+# The page can also be hosted elsewhere (e.g. on Vercel) and drive this engine on localhost.
+# Only the origins listed in HOSTED_ORIGINS may do that.
+HOSTED_ORIGINS = [o.strip() for o in os.environ.get("HOSTED_ORIGINS", "").split(",") if o.strip()]
+if HOSTED_ORIGINS:
+    # allow_private_network: Chrome asks for it before a public page may call a server on localhost.
+    app.add_middleware(
+        CORSMiddleware, allow_origins=HOSTED_ORIGINS, allow_methods=["*"], allow_headers=["*"],
+        allow_private_network=True,
+    )
 
 
 # --- Scout: find videos -------------------------------------------------------------------
@@ -473,6 +489,42 @@ async def run_preset(job: Job, keys: list[str], style: render.Style) -> None:
     _publish(job, final, plans, style.key)
 
 
+async def run_hype(job: Job, keys: list[str]) -> None:
+    """The beat-synced cut: the spotter picks each moment, hype.py does the rest."""
+    agents = await state.agents
+    limit = asyncio.Semaphore(4)
+    videos = [job.videos[k] for k in keys]
+    plans = [p for p in await asyncio.gather(*(plan_clip(job, v, agents["spotter"], limit) for v in videos)) if p]
+    if not plans:
+        raise RuntimeError("none of the selected videos produced a clip")
+
+    clips, cuts = [], []
+    for plan in plans:
+        # Every clip runs the same number of beats: take that window from the middle of the spotter's pick.
+        length = min(hype.CLIP_SECONDS, plan["info"].duration)
+        middle = (plan["start"] + plan["end"]) / 2
+        start = max(0.0, min(middle - length / 2, plan["info"].duration - length))
+        end = start + length
+        video = plan["video"]
+        clips.append({
+            "src": str(plan["path"].resolve()), "start": start, "end": end,
+            "boxes": [[k.t, *k.box] for k in plan["keyframes"] if start - 0.3 <= k.t <= end + 0.3],
+            "handle": video["handle"], "platform": video["platform"], "followers": video.get("followers"),
+            "views": video.get("views"), "official": bool(video.get("official")), "caption": plan["caption"],
+        })
+        cuts.append({"key": plan["key"], "start": start, "end": end, "caption": plan["caption"]})
+        _clip_update(job, plan["key"])("rendering", segment={"start": round(start, 1), "end": round(end, 1)})
+
+    job.emit("status", stage="render", text="Cutting to the beat")
+    job.renders += 1
+    final = job.dir / f"ad_{job.renders}.mp4"
+    product_name = (job.product or {}).get("name") or job.query
+    await asyncio.to_thread(hype.render, hype.build_plan(product_name, clips), final)
+    for cut in cuts:
+        _clip_update(job, cut["key"])("done", cut["caption"])
+    _publish(job, final, cuts, hype.STYLE["key"])
+
+
 async def run_render(job: Job, keys: list[str], style: str) -> None:
     job.busy = True
     try:
@@ -483,6 +535,10 @@ async def run_render(job: Job, keys: list[str], style: str) -> None:
                 job, keys, client=state.client, agent_id=agents["director"],
                 fetch_source=fetch_source, publish=_publish,
             )
+        elif style == hype.STYLE["key"]:
+            await run_hype(job, keys)
+        elif style == LOCAL_CLAUDE_KEY:
+            raise RuntimeError("My Claude is switched on but not built yet; pick another style")
         else:
             await run_preset(job, keys, render.STYLES[style])
     except Exception as e:
@@ -542,24 +598,39 @@ async def start_render(job_id: str, body: RenderRequest) -> dict:
         raise HTTPException(400, "select at least one video")
     if len(keys) > MAX_SELECTED:
         raise HTTPException(400, f"select at most {MAX_SELECTED} videos")
-    if body.style != director.STYLE_KEY and body.style not in render.STYLES:
-        raise HTTPException(400, "unknown style")
+    if body.style not in {s["key"] for s in _styles() if s["enabled"]}:
+        raise HTTPException(400, "unknown or unavailable style")
     if job.busy:
         raise HTTPException(409, "this job is still working")
     asyncio.create_task(run_render(job, keys, body.style))
     return {"ok": True}
 
 
+def _styles() -> list[dict]:
+    presets = [
+        {"key": st.key, "label": st.label, "description": st.description, "kind": "preset", "enabled": True}
+        for st in render.STYLES.values()
+    ]
+    return [
+        {**hype.STYLE, "kind": "preset", "enabled": True, "badge": "New"},
+        *presets,
+        {
+            "key": director.STYLE_KEY, "label": "AI Director", "kind": "agent", "enabled": True, "badge": "Opus 5.5",
+            "description": "Claude Opus 5.5 edits the ad itself inside a ZooWork sandbox (takes a few minutes)",
+        },
+        {
+            "key": LOCAL_CLAUDE_KEY, "label": "My Claude", "kind": "local", "enabled": LOCAL_CLAUDE, "badge": "Local",
+            "description": (
+                "Claude Code on this machine edits the ad with your own Claude plan"
+                if LOCAL_CLAUDE else "Start the app on your own machine with LOCAL_CLAUDE=1 to turn this on"
+            ),
+        },
+    ]
+
+
 @app.get("/api/styles")
 async def styles() -> list[dict]:
-    presets = [
-        {"key": s.key, "label": s.label, "description": s.description, "kind": "preset"}
-        for s in render.STYLES.values()
-    ]
-    return [*presets, {
-        "key": director.STYLE_KEY, "label": "AI Director", "kind": "agent",
-        "description": "Claude Opus 5.5 edits the ad itself inside a ZooWork sandbox (takes a few minutes)",
-    }]
+    return _styles()
 
 
 @app.get("/api/jobs/{job_id}/events")

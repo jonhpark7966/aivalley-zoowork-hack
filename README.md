@@ -26,6 +26,10 @@ browser ──► local server (FastAPI) ──► ZooWork Managed Agents
    and videos from the brand's own account are marked Official.
 2. The seller plays the embedded videos, selects up to six and picks a style.
 3. The selected videos are downloaded locally. What happens next depends on the style:
+   - **Hype.** The Spotter picks each moment as below, then `app/hype.py` cuts everything to a
+     120 BPM grid: a three-word hook, camera punch-ins and whip transitions, a glowing ring
+     that tracks the product, captions that pop on the beat, follower and view counters, and
+     a synthesized beat with impacts, whooshes and a riser into the end card.
    - **Presets (Spotlight, Clean, Bold).** The **Spotter agent** asks for frames through the
      `get_frames` custom tool, which returns them as images, picks the best 3 to 5 seconds and
      returns a bounding box for the product in each frame. The clip is then drawn locally with
@@ -69,6 +73,25 @@ Set `ZOOWORK_SCOUT_MODEL`, `ZOOWORK_SPOTTER_MODEL` or `ZOOWORK_DIRECTOR_MODEL` t
 model. The defaults are `litellm/gemini-3.8-flash` for the Scout and Spotter and
 `litellm/claude-opus-5-5` for the Director.
 
+### Hosted page, local engine
+
+The page in `app/static/` is plain static files and can be hosted anywhere (it is deployed on
+Vercel). Video download and editing cannot run there: YouTube blocks datacenter IPs, jobs run
+for minutes, and they need ffmpeg. So a hosted page looks for the engine on
+`http://localhost:4600` and drives it from the browser. To allow that, list the page's origin
+in `.env`:
+
+```bash
+HOSTED_ORIGINS=https://your-deployment.vercel.app
+```
+
+Chrome asks once for permission to reach apps on this device. Safari does not allow an HTTPS
+page to call `http://localhost`. Without an engine the page shows how to start one.
+
+`LOCAL_CLAUDE=1` is reserved for letting the Claude Code CLI on the same machine edit the ad
+("My Claude" in the style picker). The switch and the button exist; the edit itself is not
+built yet.
+
 ### Layout
 
 | Path | |
@@ -78,6 +101,8 @@ model. The defaults are `litellm/gemini-3.8-flash` for the Scout and Spotter and
 | `app/director.py` | The AI Director pipeline and the sandbox file handoff |
 | `app/media.py` | URL parsing, oEmbed lookup, reach stats, Shorts search, download, frames |
 | `app/render.py` | Preset styles: clip cutting, overlays, end card, concat |
+| `app/hype.py` | Hype style: beat grid, camera, tracked glow, kinetic type, synthesized sound |
+| `showcase/` | A reference Hype ad and the plan that produced it |
 | `app/static/` | The page |
 
 ## Event
