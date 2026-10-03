@@ -275,6 +275,7 @@ function addVideo(video) {
     el('span', 'official', 'Official'),
     el('span', 'check', '✓'),
   );
+  if (video.via) frame.append(el('span', 'via', `via ${video.via}`));
 
   const meta = el('div', 'meta');
   meta.append(

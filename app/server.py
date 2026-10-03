@@ -133,6 +133,7 @@ STEP_TITLES = {
     "web_search": "Searching the web",
     "web_fetch": "Reading page",
     "search_youtube_shorts": "Searching YouTube Shorts",
+    "tavily_search": "Searching with Tavily",
     "image": "Looking at an image",
 }
 
@@ -164,10 +165,15 @@ def _progress_hook(job: Job):
 
 # Each lane is one scout session; they run side by side so the list fills quickly.
 SEARCH_LANES = [
-    ("youtube", "YouTube Shorts", "honest reviews and unboxings by independent creators"),
-    ("youtube", "YouTube Shorts", "everyday use, hauls and 'is it worth it' takes, plus anything from the brand's own channel"),
-    ("tiktok", "TikTok", "honest reviews and unboxings by independent creators"),
-    ("tiktok", "TikTok", "everyday use, hauls and viral moments, plus anything from the brand's own account"),
+    ("youtube", "YouTube Shorts", "honest reviews and unboxings by independent creators", None),
+    ("youtube", "YouTube Shorts", "everyday use, hauls and 'is it worth it' takes, plus anything from the brand's own channel", None),
+    ("tiktok", "TikTok", "honest reviews and unboxings by independent creators", None),
+    ("tiktok", "TikTok", "everyday use, hauls and viral moments, plus anything from the brand's own account", None),
+]
+# Two more scouts search through Tavily when a key is configured.
+TAVILY_LANES = [
+    ("youtube", "YouTube Shorts", "popular creator videos: favourites, comparisons, 'things I love' lists", "tavily_search"),
+    ("tiktok", "TikTok", "popular creator videos: favourites, restocks, day-in-the-life clips", "tavily_search"),
 ]
 
 
@@ -216,7 +222,7 @@ async def run_scout(job: Job) -> None:
         video.update(found)
         job.emit("video_update", key=video["key"], **found)
 
-    async def submit_video(args: dict) -> list[dict]:
+    async def submit_video(args: dict, via: str = "") -> list[dict]:
         ref = media.parse_video_url(str(args.get("url") or ""))
         if ref is None:
             return zoo.json_result({"accepted": False, "reason": "not a YouTube Shorts or TikTok video URL"})
@@ -238,7 +244,7 @@ async def run_scout(job: Job) -> None:
             "key": ref.key, "platform": ref.platform, "video_id": ref.video_id, "url": ref.url,
             "reason": str(args.get("reason") or ""), "flagged_official": bool(args.get("is_official")),
             "views": None, "likes": None, "followers": None, "duration": None, "verified": False,
-            **meta,
+            "via": via, **meta,
         }
         video["official"] = _is_official(job, video)
         job.videos[ref.key] = video
@@ -248,7 +254,16 @@ async def run_scout(job: Job) -> None:
         task.add_done_callback(background.discard)
         return zoo.json_result({"accepted": True, "total": len(job.videos)})
 
-    handlers = {"set_product": set_product, "search_youtube_shorts": search_youtube_shorts, "submit_video": submit_video}
+    async def tavily_search(args: dict) -> list[dict]:
+        return zoo.json_result(await media.tavily_search(
+            state.http, os.environ["TAVILY_API_KEY"], str(args["query"]), str(args.get("platform") or "tiktok"),
+        ))
+
+    handlers = {
+        "set_product": set_product, "search_youtube_shorts": search_youtube_shorts,
+        "tavily_search": tavily_search, "submit_video": submit_video,
+    }
+    lanes = SEARCH_LANES + (TAVILY_LANES if os.environ.get("TAVILY_API_KEY") else [])
 
     async def identify() -> None:
         await zoo.run_turn(
@@ -257,18 +272,23 @@ async def run_scout(job: Job) -> None:
             handlers, on_event=_progress_hook(job), timeout=120,
         )
 
-    async def search(platform: str, label: str, angle: str) -> str:
+    async def search(platform: str, label: str, angle: str, tool: str | None) -> str:
         product = job.product["name"] if job.product else job.query
         hints = ", ".join((job.product or {}).get("keywords") or [])
         message = (
             f"Task: SEARCH\n\nProduct: {product}\n"
             + (f"Also known as: {hints}\n" if hints else "")
             + f"Platform: {label}\nAngle: {angle}\n"
-            f"Submit up to {LANE_TARGET} videos."
+            + (f"Search tool: {tool} (platform \"{platform}\")\n" if tool else "")
+            + f"Submit up to {LANE_TARGET} videos."
         )
+        # Remember which search found each video, so the card can say so.
+        lane_handlers = handlers
+        if tool == "tavily_search":
+            lane_handlers = {**handlers, "submit_video": lambda args: submit_video(args, via="Tavily")}
         try:
             outcome, _ = await zoo.run_turn(
-                state.client, agents["scout"], message, handlers, on_event=_progress_hook(job), timeout=150
+                state.client, agents["scout"], message, lane_handlers, on_event=_progress_hook(job), timeout=150
             )
             return outcome
         except Exception as e:
@@ -278,13 +298,13 @@ async def run_scout(job: Job) -> None:
     try:
         job.emit("status", stage="scout", text="Waking up the scout agents")
         agents = await state.agents
-        job.emit("status", stage="scout", text=f"{len(SEARCH_LANES)} scouts are searching in parallel")
+        job.emit("status", stage="scout", text=f"{len(lanes)} scouts are searching in parallel")
         if "http://" in job.query or "https://" in job.query:
             # A link has to be read before anyone knows what to search for.
             await identify()
-            outcomes = await asyncio.gather(*(search(*lane) for lane in SEARCH_LANES))
+            outcomes = await asyncio.gather(*(search(*lane) for lane in lanes))
         else:
-            outcomes = (await asyncio.gather(identify(), *(search(*lane) for lane in SEARCH_LANES)))[1:]
+            outcomes = (await asyncio.gather(identify(), *(search(*lane) for lane in lanes)))[1:]
         if not job.videos:
             raise RuntimeError(f"the scouts found nothing ({', '.join(outcomes)})")
         if background:

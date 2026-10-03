@@ -159,6 +159,31 @@ async def search_youtube(http: httpx.AsyncClient, query: str, limit: int = 10) -
     return list(found.values())
 
 
+TAVILY_DOMAINS = {"youtube": ["youtube.com"], "tiktok": ["tiktok.com"]}
+
+
+async def tavily_search(http: httpx.AsyncClient, api_key: str, query: str, platform: str) -> list[dict]:
+    """Search one platform through Tavily, keeping only results that are usable video URLs."""
+    res = await http.post(
+        "https://api.tavily.com/search",
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={"query": query, "max_results": 20, "include_domains": TAVILY_DOMAINS[platform]},
+        timeout=30,
+    )
+    res.raise_for_status()
+    found: dict[str, dict] = {}
+    for item in res.json().get("results") or []:
+        # Tavily also returns tag, discover and channel pages; only single videos are useful.
+        ref = parse_video_url(item.get("url") or "")
+        if ref and ref.platform == platform and ref.key not in found:
+            found[ref.key] = {"ref": ref, "url": ref.url, "title": item.get("title"), "snippet": (item.get("content") or "")[:200]}
+    videos = list(found.values())
+    if platform == "youtube":
+        checks = await asyncio.gather(*(is_short(http, v["ref"].video_id) for v in videos))
+        videos = [v for v, ok in zip(videos, checks) if ok]
+    return [{k: v[k] for k in ("url", "title", "snippet")} for v in videos]
+
+
 def _download(ref: VideoRef, dest_dir: Path) -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
     out = dest_dir / f"{ref.key}.mp4"

@@ -55,6 +55,8 @@ The message names a platform and an angle. Run two or three searches for that an
 
 - YouTube Shorts: `search_youtube_shorts` (plain keywords work best, no `site:` operators).
 - TikTok: `web_search` with `site:tiktok.com` in the query.
+- When the message names `tavily_search` as the search tool, use only that tool for searching.
+  It returns only usable video URLs, so try three or four differently worded queries.
 
 Call `submit_video` for every good result right after each search, one call per video, all
 calls for one search in the same step. Do not save them up; the seller watches the list fill
@@ -219,6 +221,21 @@ SCOUT_TOOLS = [
                 "max_results": {"type": "integer", "minimum": 1, "maximum": 15},
             },
             "required": ["query"],
+        },
+    },
+    {
+        "name": "tavily_search",
+        "description": (
+            "Search one platform with Tavily. Returns a list of {url, title, snippet}, already "
+            "filtered to single videos (YouTube results are real Shorts)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Plain keywords; no site: operators."},
+                "platform": {"type": "string", "enum": ["youtube", "tiktok"]},
+            },
+            "required": ["query", "platform"],
         },
     },
     {

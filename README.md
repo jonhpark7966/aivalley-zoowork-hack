@@ -13,7 +13,7 @@ a list of creators and the exact seconds used, ready for permission requests.
 
 ```
 browser ──► local server (FastAPI) ──► ZooWork Managed Agents
-                 │                         Scout    x4 sessions: web_search, web_fetch + custom tools
+                 │                         Scout    x6 sessions: web_search, web_fetch, Tavily + custom tools
                  │                         Spotter  looks at frames, returns product boxes
                  │                         Director Claude Opus 5.5 editing in the sandbox
                  └─► yt-dlp, ffmpeg, Pillow (download, cut, preset overlays, join)
@@ -21,7 +21,8 @@ browser ──► local server (FastAPI) ──► ZooWork Managed Agents
 
 1. **Scout agent.** One session identifies the product (reading the product page when given a
    link) while four more search YouTube Shorts and TikTok in parallel, each from its own
-   angle. Every find comes back through the `submit_video` custom tool, so cards appear one by
+   angle. With `TAVILY_API_KEY` set, two further sessions search through Tavily, and the
+   videos they find are marked "via Tavily". Every find comes back through the `submit_video` custom tool, so cards appear one by
    one, up to 15. Each card then fills in the creator's follower count and the video's views,
    and videos from the brand's own account are marked Official.
 2. The seller plays the embedded videos, selects up to six and picks a style.
